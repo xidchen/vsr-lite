@@ -1,11 +1,9 @@
 import enum
 import os
 import logging
-import warnings
 
 import torch
 
-warnings.filterwarnings("ignore")
 
 logging.disable(logging.DEBUG)
 logging.disable(logging.WARNING)

@@ -6,13 +6,11 @@ import pathlib
 import platform
 import sys
 import tempfile
-import threading
 import time
 import shutil
 import subprocess
 
 import cv2
-import torch
 import tqdm
 
 from backend import cfg
@@ -20,15 +18,10 @@ from backend.inpaint.sttn_inpaint import STTNVideoInpaint
 from backend.tools.inpaint_tools import create_mask
 
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-
 class SubtitleRemover:
 
     def __init__(self, vd_path, sub_area=None, gui_mode=False):
         importlib.reload(cfg)
-        self.lock = threading.RLock()
         self.sub_area = sub_area
         self.gui_mode = gui_mode
         self.is_picture = False
@@ -54,8 +47,6 @@ class SubtitleRemover:
         self.video_inpaint = None
         self.lama_inpaint = None
         self.ext = os.path.splitext(vd_path)[-1]
-        if torch.cuda.is_available():
-            print("Use GPU for acceleration")
         self.progress_total = 0
         self.progress_remover = 0
         self.is_finished = False
@@ -69,8 +60,6 @@ class SubtitleRemover:
         self.progress_total = 50 + self.progress_remover
 
     def sttn_mode_with_no_detection(self, tbar):
-        print("Use sttn mode with no detection")
-        print("[Processing] Start removing subtitles...")
         if self.sub_area is not None:
             ymin, ymax, xmin, xmax = self.sub_area
         else:
@@ -91,14 +80,13 @@ class SubtitleRemover:
 
     def run(self):
         start_time = time.time()
-        print(f"Start time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
         self.progress_total = 0
         tbar = tqdm.tqdm(
             total=int(self.frame_count),
             unit="frame",
             position=0,
             file=sys.__stdout__,
-            desc="Subtitle Removing"
+            desc=f"Subtitle Removing {self.vd_name}"
         )
         print()
         if cfg.MODE == cfg.InpaintMode.STTN:
@@ -108,20 +96,12 @@ class SubtitleRemover:
         print()
         if not self.is_picture:
             self.merge_audio_to_video()
-            print("[Finished] Subtitle removed.")
             print(f"[Finished] Video generated at: {self.video_out_name}")
         else:
-            print("[Finished] Subtitle removed.")
             print(f"[Finished] Picture generated at: {self.video_out_name}")
-        time_cost = time.time() - start_time
-        hours, _ = divmod(time_cost, 3600)
-        minutes, seconds = divmod(time_cost, 60)
-        if hours:
-            print(f"Time cost: {int(hours)}h {int(minutes)}m {int(seconds)}s")
-        elif minutes:
-            print(f"Time cost: {int(minutes)}m {int(seconds)}s")
-        elif seconds:
-            print(f"Time cost: {seconds}s")
+        end_time = time.time()
+        time_cost = end_time - start_time
+        print(f"Time cost {self.vd_name}: {nice_time_cost(time_cost)}")
         self.is_finished = True
         self.progress_total = 100
         if os.path.exists(self.video_temp_file.name):
@@ -182,24 +162,71 @@ class SubtitleRemover:
             self.video_temp_file.close()
 
 
+def nice_time_cost(time_cost):
+    hours, _ = divmod(time_cost, 3600)
+    minutes, seconds = divmod(time_cost, 60)
+    if hours:
+        return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
+    elif minutes:
+        return f"{int(minutes)}m {int(seconds)}s"
+    elif seconds:
+        return f"{seconds}s"
+
+
+def process_files_in_directory(directory, files, sub_area=None):
+    for file in files:
+        file_path = os.path.join(directory, file)
+        processor = SubtitleRemover(file_path, sub_area=sub_area)
+        processor.run()
+
+
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
     parser = argparse.ArgumentParser(description="video subscript remover")
     parser.add_argument(
-        "--file",
-        type=str, help="video absolute path"
+        "--dir",
+        type=str, help="video absolute directory path"
     )
     parser.add_argument(
         "--area",
         default=(1450, 1600, 180, 900),
-        type=tuple[int], help="vubtitle area"
+        type=tuple[int], help="subtitle area (y1, y2, x1, x2)"
     )
     args = vars(parser.parse_args())
-    video_file_path = args["file"]
-    if not os.path.exists(video_file_path):
-        print(f"File does not exist: {video_file_path}")
+    video_directory_path = args["dir"]
+    if not os.path.exists(video_directory_path):
+        print(f"Directory path does not exist: {video_directory_path}")
+        sys.exit()
     subtitle_area = args["area"]
     if len(subtitle_area) != 4:
         print(f"Subtitle area not correct: {subtitle_area}")
-    sd = SubtitleRemover(video_file_path, sub_area=subtitle_area)
-    sd.run()
+        sys.exit(0)
+    video_paths = os.listdir(video_directory_path)
+    num_videos = len(video_paths)
+    max_processes = 5
+    num_processes = min(num_videos, multiprocessing.cpu_count(), max_processes)
+    chunk_size = num_videos // num_processes
+    remainder = num_videos % num_processes
+    chunks = []
+    chunk_start = 0
+    for i in range(num_processes):
+        if i < remainder:
+            chunk_end = chunk_start + chunk_size + 1
+        else:
+            chunk_end = chunk_start + chunk_size
+        chunks.append(video_paths[chunk_start:chunk_end])
+        chunk_start = chunk_end
+    all_start_time = time.time()
+    pool = multiprocessing.Pool(processes=num_processes)
+    pool.starmap(
+        process_files_in_directory,
+        [(video_directory_path, chunk, subtitle_area) for chunk in chunks]
+    )
+    pool.close()
+    pool.join()
+    all_end_time = time.time()
+    all_time_cost = all_end_time - all_start_time
+    print(
+        f"Subtitles of all {num_videos} videos removed "
+        f"within {nice_time_cost(all_time_cost)}"
+    )

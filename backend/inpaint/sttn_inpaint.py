@@ -1,6 +1,5 @@
 import copy
 import os
-import sys
 from typing import List
 
 import cv2
@@ -11,9 +10,6 @@ import torchvision
 from backend import cfg
 from backend.inpaint.sttn.auto_sttn import InpaintGenerator
 from backend.inpaint.utils.sttn_utils import Stack, ToTorchFormatTensor
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 
 _to_tensors = torchvision.transforms.Compose([
