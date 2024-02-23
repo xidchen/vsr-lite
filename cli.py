@@ -170,7 +170,7 @@ def nice_time_cost(time_cost):
     elif minutes:
         return f"{int(minutes)}m {int(seconds)}s"
     elif seconds:
-        return f"{seconds}s"
+        return f"{int(seconds)}s"
 
 
 def process_files_in_directory(directory, files, sub_area=None):
@@ -203,8 +203,9 @@ if __name__ == "__main__":
         sys.exit(0)
     video_paths = os.listdir(video_directory_path)
     num_videos = len(video_paths)
-    max_processes = 5
-    num_processes = min(num_videos, multiprocessing.cpu_count(), max_processes)
+    num_processes = min(
+        num_videos, multiprocessing.cpu_count(), cfg.MAX_PROCESSES
+    )
     chunk_size = num_videos // num_processes
     remainder = num_videos % num_processes
     chunks = []

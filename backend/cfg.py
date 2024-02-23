@@ -13,6 +13,8 @@ STTN_MODEL_PATH = os.path.join(BASE_DIR, "models", "sttn", "infer_model.pth")
 
 FFMPEG_PATH = "ffmpeg"
 
+MAX_PROCESSES = 5
+
 
 @enum.unique
 class InpaintMode(enum.Enum):
