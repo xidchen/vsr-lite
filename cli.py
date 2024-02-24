@@ -185,12 +185,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="video subscript remover")
     parser.add_argument(
         "--dir",
-        type=str, help="video absolute directory path"
+        help="video absolute directory path"
     )
     parser.add_argument(
         "--area",
-        default=(1450, 1600, 180, 900),
-        type=tuple[int], help="subtitle area (y1, y2, x1, x2)"
+        help="subtitle area (y1, y2, x1, x2)"
     )
     args = vars(parser.parse_args())
     video_directory_path = args["dir"]
@@ -198,9 +197,11 @@ if __name__ == "__main__":
         print(f"Directory path does not exist: {video_directory_path}")
         sys.exit()
     subtitle_area = args["area"]
-    if len(subtitle_area) != 4:
-        print(f"Subtitle area not correct: {subtitle_area}")
-        sys.exit(0)
+    if isinstance(subtitle_area, str):
+        subtitle_area = eval(subtitle_area)
+        if not isinstance(subtitle_area, tuple) and len(subtitle_area) != 4:
+            print(f"Subtitle area not correct: {subtitle_area}")
+            sys.exit(0)
     video_paths = os.listdir(video_directory_path)
     num_videos = len(video_paths)
     num_processes = min(
