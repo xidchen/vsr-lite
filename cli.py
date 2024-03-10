@@ -163,8 +163,8 @@ class SubtitleRemover:
 
 
 def nice_time_cost(time_cost):
-    hours, _ = divmod(time_cost, 3600)
-    minutes, seconds = divmod(time_cost, 60)
+    hours, minutes = divmod(time_cost, 3600)
+    minutes, seconds = divmod(minutes, 60)
     if hours:
         return f"{int(hours)}h {int(minutes)}m {int(seconds)}s"
     elif minutes:
