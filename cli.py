@@ -39,10 +39,14 @@ class SubtitleRemover:
             self.video_temp_file.name, cv2.VideoWriter.fourcc(*"mp4v"),
             self.fps, self.size
         )
-        self.video_out_name = os.path.join(
+        self.video_out_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(self.video_path))),
-            "videos_no_sub",
-            f"{self.vd_name}_no_sub.mp4"
+            "videos_no_sub"
+        )
+        if not os.path.exists(self.video_out_dir):
+            os.makedirs(self.video_out_dir)
+        self.video_out_name = os.path.join(
+            self.video_out_dir, f"{self.vd_name}_no_sub.mp4"
         )
         self.video_inpaint = None
         self.lama_inpaint = None
