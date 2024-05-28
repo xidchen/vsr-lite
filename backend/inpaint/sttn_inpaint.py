@@ -176,7 +176,10 @@ class STTNVideoInpaint:
         else:
             self.clip_gap = clip_gap
 
-    def __call__(self, input_mask=None, input_sub_remover=None, tbar=None):
+    def __call__(
+            self, input_mask=None, input_sub_remover=None,
+            tbar=None, start_frame=0, end_frame=None
+    ):
         reader, frame_info = self.read_frame_info_from_video()
         if input_sub_remover is not None:
             writer = input_sub_remover.video_writer
@@ -202,48 +205,33 @@ class STTNVideoInpaint:
             frame_info["H_ori"], split_h, mask
         )
         for i in range(rec_time):
-            start_f = i * self.clip_gap
-            end_f = min((i + 1) * self.clip_gap, frame_info["len"])
-            print(f"Processing: {start_f + 1} - {end_f} / Total: {frame_info['len']}", end=" ")
-            frames_hr = []
-            frames = {}
-            comps = {}
-            for k in range(len(inpaint_area)):
-                frames[k] = []
-            for j in range(start_f, end_f):
+            for j in range(self.clip_gap):
                 success, image = reader.read()
-                frames_hr.append(image)
-                for k in range(len(inpaint_area)):
-                    image_crop = image[inpaint_area[k][0]:inpaint_area[k][1], :, :]
-                    image_resize = cv2.resize(
-                        image_crop,
-                        dsize=(
-                            self.sttn_inpaint.model_input_width,
-                            self.sttn_inpaint.model_input_height
-                        )
-                    )
-                    frames[k].append(image_resize)
-            for k in range(len(inpaint_area)):
-                comps[k] = self.sttn_inpaint.inpaint(frames[k])
-            if inpaint_area is not []:
-                for j in range(end_f - start_f):
-                    if input_sub_remover is not None and input_sub_remover.gui_mode:
-                        original_frame = copy.deepcopy(frames_hr[j])
-                    else:
-                        original_frame = None
-                    frame = frames_hr[j]
+                if not success:
+                    break
+                current_frame = i * self.clip_gap + j
+                original_frame = image.copy()
+                if start_frame <= current_frame < end_frame:
+                    frames = [cv2.resize(image[inpaint_area[k][0]:inpaint_area[k][1], :, :],
+                                         dsize=(self.sttn_inpaint.model_input_width,
+                                                self.sttn_inpaint.model_input_height))
+                              for k in range(len(inpaint_area))]
+                    comps = {
+                        k: self.sttn_inpaint.inpaint([frames[k]])[0]
+                        for k in range(len(inpaint_area))
+                    }
                     for k in range(len(inpaint_area)):
-                        comp = cv2.resize(comps[k][j], dsize=(frame_info["W_ori"], split_h))
+                        comp = cv2.resize(comps[k], dsize=(frame_info["W_ori"], split_h))
                         comp = cv2.cvtColor(np.array(comp).astype(np.uint8), cv2.COLOR_BGR2RGB)
                         mask_area = mask[inpaint_area[k][0]:inpaint_area[k][1], :]
-                        frame[inpaint_area[k][0]:inpaint_area[k][1], :, :] = (
+                        image[inpaint_area[k][0]:inpaint_area[k][1], :, :] = (
                             mask_area * comp +
-                            (1 - mask_area) * frame[inpaint_area[k][0]:inpaint_area[k][1], :, :]
+                            (1 - mask_area) * image[inpaint_area[k][0]:inpaint_area[k][1], :, :]
                         )
-                    writer.write(frame)
-                    if input_sub_remover is not None:
-                        if tbar is not None:
-                            input_sub_remover.update_progress(tbar, increment=1)
-                        if original_frame is not None and input_sub_remover.gui_mode:
-                            input_sub_remover.preview_frame = cv2.hconcat([original_frame, frame])
+                writer.write(image)
+                if input_sub_remover is not None:
+                    if tbar is not None:
+                        input_sub_remover.update_progress(tbar, increment=1)
+                    if input_sub_remover.gui_mode:
+                        input_sub_remover.preview_frame = cv2.hconcat([original_frame, image])
         writer.release()

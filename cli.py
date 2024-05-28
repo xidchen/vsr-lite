@@ -20,7 +20,9 @@ from backend.tools.inpaint_tools import create_mask
 
 class SubtitleRemover:
 
-    def __init__(self, vd_path, sub_area=None, gui_mode=False):
+    def __init__(
+            self, vd_path, sub_area=None, gui_mode=False, start_t=None, end_t=None
+    ):
         importlib.reload(cfg)
         self.sub_area = sub_area
         self.gui_mode = gui_mode
@@ -30,6 +32,8 @@ class SubtitleRemover:
         self.vd_name = pathlib.Path(self.video_path).stem
         self.frame_count = int(self.video_cap.get(cv2.CAP_PROP_FRAME_COUNT) + 0.5)
         self.fps = self.video_cap.get(cv2.CAP_PROP_FPS)
+        self.start_frame = 0 if start_t is None else int(start_t * self.fps)
+        self.end_frame = self.frame_count if end_t is None else int(end_t * self.fps)
         self.frame_height = int(self.video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.frame_width = int(self.video_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.size = (self.frame_width, self.frame_height)
@@ -76,7 +80,10 @@ class SubtitleRemover:
         mask_area_coordinates = [(xmin, xmax, ymin, ymax)]
         mask = create_mask(self.mask_size, mask_area_coordinates)
         sttn_video_inpaint = STTNVideoInpaint(self.video_path)
-        sttn_video_inpaint(input_mask=mask, input_sub_remover=self, tbar=tbar)
+        sttn_video_inpaint(
+            input_mask=mask, input_sub_remover=self, tbar=tbar,
+            start_frame=self.start_frame, end_frame=self.end_frame
+        )
 
     def sttn_mode(self, tbar):
         if cfg.STTN_SKIP_DETECTION:
@@ -177,10 +184,14 @@ def nice_time_cost(time_cost):
         return f"{int(seconds)}s"
 
 
-def process_files_in_directory(directory, files, sub_area=None):
+def process_files_in_directory(
+        directory, files, sub_area=None, start_t=None, end_t=None
+):
     for file in files:
         file_path = os.path.join(directory, file)
-        processor = SubtitleRemover(file_path, sub_area=sub_area)
+        processor = SubtitleRemover(
+            file_path, sub_area=sub_area, start_t=start_t, end_t=end_t
+        )
         processor.run()
 
 
@@ -195,6 +206,14 @@ if __name__ == "__main__":
         "--area",
         help="subtitle area (y1, y2, x1, x2)"
     )
+    parser.add_argument(
+        "--start",
+        help="start time"
+    )
+    parser.add_argument(
+        "--end",
+        help="end time"
+    )
     args = vars(parser.parse_args())
     video_directory_path = args["dir"]
     if not os.path.exists(video_directory_path):
@@ -205,6 +224,18 @@ if __name__ == "__main__":
         subtitle_area = eval(subtitle_area)
         if not isinstance(subtitle_area, tuple) and len(subtitle_area) != 4:
             print(f"Subtitle area not correct: {subtitle_area}")
+            sys.exit(0)
+    subtitle_start_time = args["start"]
+    if subtitle_start_time and isinstance(subtitle_start_time, str):
+        subtitle_start_time = eval(subtitle_start_time)
+        if not isinstance(subtitle_start_time, int):
+            print(f"Subtitle start time not correct: {subtitle_start_time}")
+            sys.exit(0)
+    subtitle_end_time = args["end"]
+    if subtitle_end_time and isinstance(subtitle_end_time, str):
+        subtitle_end_time = eval(subtitle_end_time)
+        if not isinstance(subtitle_end_time, int):
+            print(f"Subtitle end time not correct: {subtitle_end_time}")
             sys.exit(0)
     video_paths = os.listdir(video_directory_path)
     num_videos = len(video_paths)
@@ -226,7 +257,13 @@ if __name__ == "__main__":
     pool = multiprocessing.Pool(processes=num_processes)
     pool.starmap(
         process_files_in_directory,
-        [(video_directory_path, chunk, subtitle_area) for chunk in chunks]
+        [
+            (
+                video_directory_path, chunk, subtitle_area,
+                subtitle_start_time, subtitle_end_time
+            )
+            for chunk in chunks
+        ]
     )
     pool.close()
     pool.join()
